@@ -1,54 +1,34 @@
 # PAI
 
-Document question answering over German documents. Ingest PDFs, retrieve relevant
-passages, answer with citations. Low-confidence cases go to a human review queue
-instead of being guessed at. Everything is measured against a hand-written gold set
-that runs in CI.
+Compliance gap-checker. Given a target document (privacy notice, policy, contract) and a
+regulation corpus, produce a traceable compliance matrix: requirement → status
+(addressed / partial / not found) → verbatim evidence from the target → confidence.
 
 ## Stack
-
-- Python 3.12, managed with uv
-- FastAPI + uvicorn for the HTTP layer
-- Postgres 16 + pgvector, in Docker
-- sentence-transformers, multilingual-e5-base (768 dims), running locally
-- Gemini Flash via Google AI Studio free tier; Groq as second provider
-- pytest, ruff
+Python 3.12 (uv), FastAPI, Postgres 16 + pgvector (Docker), sentence-transformers
+(multilingual-e5-base, local), Gemini Flash via Google AI Studio free tier, Groq as
+second provider.
 
 ## Layout
-
-src/ingest       parse PDFs, chunk, embed, ingest pipeline
-src/retrieval    vector search, BM25, hybrid, reranking
-src/generation   prompt construction, answer generation, citation parsing
-src/llm          provider clients, disk cache, retry/backoff, token counting
-src/api          FastAPI app
-src/eval         metric calculations
-config/          one YAML per collection
-data/raw/        source PDFs (gitignored)
-eval/gold/       hand-written eval sets, one JSONL per collection
-eval/results/    generated run output (gitignored)
-sql/             schema definitions
-scripts/         one-off utilities, not part of the system
+src/ingest        parse, chunk, embed, ingest pipeline (targets and regulations)
+src/requirements  requirement extraction from regulation text
+src/checking      per-requirement retrieval and coverage classification
+src/llm           provider clients, disk cache, backoff
+src/api           FastAPI app
+src/eval          metrics
+requirements/     curated requirement catalogs, one JSONL per regulation. HAND-CURATED.
+eval/gold/        hand-labelled compliance matrices, one JSONL per target document
+data/raw/         source PDFs (gitignored)
 
 ## Rules
-
-1. No LangChain, no LlamaIndex, no vector-store wrappers. The retrieval loop is
-   hand-written. I need to be able to explain every line of it.
-2. The engine is corpus-agnostic. Nothing specific to TU Darmstadt documents belongs
-   in src/. Documents belong to a named collection; collection settings live in
-   config/<name>.yaml.
-3. eval/gold/*.jsonl is written by hand. Never generate, extend or edit it with a
-   model. This is absolute.
-4. Every model call goes through src/llm/client.py, so it is cached and rate-limited
-   in one place.
-5. Nothing is "done" until `uv run python eval/run.py` passes the thresholds.
-6. One change per commit, with a message describing the change.
-
-## Working style
-
-- Propose the approach before writing code for anything in retrieval, generation,
-  eval or the confidence logic. I want to choose the design in those areas.
-- Scaffolding, Docker, CI config and the review UI can be written directly.
-- Prefer a small, readable implementation over a general one. No plugin
-  architectures, no abstractions with a single implementation.
-- If a change touches retrieval or prompting, re-run the eval and tell me what moved.
+- No LangChain / LlamaIndex. Retrieval and classification logic stays hand-written.
+- The requirements catalog is extracted ONCE, curated by a human, then frozen. Never
+  re-extract at request time.
+- requirements/*.jsonl and eval/gold/*.jsonl are curated by hand. Never generate or edit
+  them with a model.
+- Evidence quotes must be verbatim substrings of the cited chunk, verified in code.
+- Report metrics per status class. A false "addressed" is far worse than a false
+  "not found".
+- All model calls go through src/llm/client.py so they are cached.
+- Nothing is done until the eval passes its thresholds.
 - DO NOT DO ANYTHING WITHOUT EXPLAINING THE WHY AND THE HOW THIS IS A LEARNING PROJECT SO THE GOAL IS TO LEARN
