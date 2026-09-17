@@ -3,7 +3,7 @@
 Document question answering over German documents, with citations, a confidence-gated
 human review queue, and an evaluation harness that runs in CI.
 
-**Status:** in development. See `PLAN.md` for the build plan.
+**Status:** in development.
 
 ## What it does
 
@@ -62,7 +62,7 @@ docker compose exec -T db psql -U app -d pai < sql/schema.sql
 ## Progress
 
 - [x] Project skeleton, dependencies, tooling
-- [ ] Postgres + pgvector, schema
+- [x] Postgres + pgvector, schema
 - [ ] Ingest pipeline (parse, chunk, embed)
 - [ ] Retrieval and cited generation
 - [ ] FastAPI endpoints
