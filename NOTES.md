@@ -180,3 +180,13 @@ two places (Art. 12, Art. 14) that don't follow the Art. 13 "4 paragraphs / 6-an
 shape — but that check is only reliable when counting `<li>` in the HTML, not lines
 in the current parser's text output, since the cross-reference bug fragments some
 items into multiple lines.
+## Splitting rule (decided <18/09/2026>)
+
+One requirement = one Obligation or Condition a reviewer could tick off independently.
+
+- A lettered point naming two distinct pieces of information is split.
+- Conditional obligations ("gegebenenfalls") stay one requirement; the condition goes
+  into the text.
+- The paragraph's introductory sentence is folded into each sub-requirement so it stands
+  alone.
+- Procedural duties (Fristen, Form) are separate from content duties.

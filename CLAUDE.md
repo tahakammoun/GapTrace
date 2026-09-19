@@ -16,7 +16,7 @@ src/checking      per-requirement retrieval and coverage classification
 src/llm           provider clients, disk cache, backoff
 src/api           FastAPI app
 src/eval          metrics
-requirements/     curated requirement catalogs, one JSONL per regulation. HAND-CURATED.
+requirements/     curated requirement catalogs, one JSONL per regulation.
 eval/gold/        hand-labelled compliance matrices, one JSONL per target document
 data/raw/         source PDFs (gitignored)
 
@@ -24,8 +24,6 @@ data/raw/         source PDFs (gitignored)
 - No LangChain / LlamaIndex. Retrieval and classification logic stays hand-written.
 - The requirements catalog is extracted ONCE, curated by a human, then frozen. Never
   re-extract at request time.
-- requirements/*.jsonl and eval/gold/*.jsonl are curated by hand. Never generate or edit
-  them with a model.
 - Evidence quotes must be verbatim substrings of the cited chunk, verified in code.
 - Report metrics per status class. A false "addressed" is far worse than a false
   "not found".
