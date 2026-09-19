@@ -4,10 +4,7 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup
 
-JUNK = (
-    "script, style, nav, header, footer, aside, "
-    ".screen-reader-text, .skip-link, .entry-meta"
-)
+JUNK = "script, style, nav, header, footer, aside, .screen-reader-text, .skip-link, .entry-meta"
 
 
 def _clean(tag) -> str:
@@ -51,11 +48,13 @@ def parse_article(path: str | Path, article: str) -> list[dict]:
                 nbase = int(nested.get("start", 1))
                 for noff, item in enumerate(nested.find_all("li", recursive=False)):
                     j = nbase + noff
-                    out.append({
-                        "ref": f"Art. {article}({i})({chr(96 + j)})",
-                        "lead": lead,
-                        "text": _clean(item),
-                    })
+                    out.append(
+                        {
+                            "ref": f"Art. {article}({i})({chr(96 + j)})",
+                            "lead": lead,
+                            "text": _clean(item),
+                        }
+                    )
             else:
                 out.append({"ref": f"Art. {article}({i})", "lead": "", "text": lead})
     return out

@@ -5,10 +5,7 @@ from bs4 import BeautifulSoup
 
 RAW = Path(__file__).resolve().parent.parent / "data" / "raw"
 
-JUNK = (
-    "script, style, nav, header, footer, aside, "
-    ".screen-reader-text, .skip-link, .entry-meta"
-)
+JUNK = "script, style, nav, header, footer, aside, .screen-reader-text, .skip-link, .entry-meta"
 
 
 def main():
