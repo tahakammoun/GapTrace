@@ -1,4 +1,4 @@
-# PAI
+# GapTrace
 
 Compliance gap-checker. Given a target document (privacy notice, policy, contract) and a
 regulation corpus, produce a traceable compliance matrix: requirement → status
