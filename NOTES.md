@@ -190,3 +190,25 @@ One requirement = one Obligation or Condition a reviewer could tick off independ
 - The paragraph's introductory sentence is folded into each sub-requirement so it stands
   alone.
 - Procedural duties (Fristen, Form) are separate from content duties.
+## Catalog v1 frozen <date>
+- ~60 requirements from DSGVO Art. 12-14
+- File shape (requirements/dsgvo_art12_14.jsonl): {key, ref, legal_text, requirement,
+  condition, obligation, category, ref_verified}
+- Database shape (requirements table): same fields, with `requirement` stored in the
+  `text` column — mapped once, in src/requirements/load.py, and nowhere else
+- legal_text verified against EUR-Lex consolidated text; text is the checkable
+  paraphrase used for embedding and matching
+- ~8 rows carry an explicit `condition` (consent-based, legitimate-interest-based,
+  repurposing, third-country transfer); findings on these get `applicability` set
+  before status is decided
+- Dropped: Art. 12(2)-(6) and 12(8) (request-handling process, not document content),
+  14(3) and 14(5) (timing rules and exemptions, not checkable against document text),
+  art12_1_muendliche_information (a permission on the controller, "kann" not "muss",
+  and not observable in a written document)
+- Known limitation: no per-requirement check-type dispatcher. All requirements are
+  checked the same way (retrieve + classify + verify quote), even though some
+  (e.g. icon presence) would suit a different check shape. Not built — scale does not
+  justify it yet.
+- Splitting rule: see above
+- Changing this catalog invalidates every measurement taken against it. If it must
+  change, bump version to v2.

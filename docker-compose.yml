@@ -1,18 +1,20 @@
+name: gaptrace
+
 services:
   db:
     image: pgvector/pgvector:pg16
-    container_name: pai-db
+    container_name: gaptrace-db
     restart: unless-stopped
     environment:
       POSTGRES_USER: app
       POSTGRES_PASSWORD: app
-      POSTGRES_DB: pai
+      POSTGRES_DB: gaptrace
     ports:
       - "5432:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U app -d pai"]
+      test: ["CMD-SHELL", "pg_isready -U app -d gaptrace"]
       interval: 5s
       timeout: 3s
       retries: 10

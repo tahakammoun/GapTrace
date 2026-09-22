@@ -1,4 +1,4 @@
-# PAI
+# GapTrace
 
 Compliance gap-checker: given a target document and a regulation, produce a traceable
 matrix of requirement → status → evidence → confidence.
@@ -8,7 +8,7 @@ matrix of requirement → status → evidence → confidence.
 ## Progress
 - [x] Project skeleton, dependencies, tooling
 - [x] Postgres + pgvector, collections schema
-- [ ] Requirements catalog (DSGVO Art. 12–14)
+- [x] Requirements catalog (DSGVO Art. 12–14)
 - [ ] Target ingest and coverage checking
 - [ ] Evaluation harness and baseline
 - [ ] Review queue and matrix export
