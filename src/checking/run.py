@@ -103,7 +103,15 @@ def run(filename: str):
     print(f"\n{counts}   invalid evidence: {invalid}")
 
 
+def already_ingested(filename: str) -> bool:
+    with connect() as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT 1 FROM documents WHERE filename = %s", (filename,))
+        return cur.fetchone() is not None
+
+
 if __name__ == "__main__":
     path = Path(sys.argv[1])
-    ingest(path)
+    if not already_ingested(path.name):
+        ingest(path)
     run(path.name)

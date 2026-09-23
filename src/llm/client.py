@@ -74,8 +74,10 @@ def _call_gemini(system: str | None, prompt: str) -> str:
                 raise ProviderUnavailable("gemini: quota exceeded") from e
             raise
         except genai_errors.ServerError as e:
-            if e.code != 503 or attempt == len(RETRY_DELAYS):
+            if e.code != 503:
                 raise
+            if attempt == len(RETRY_DELAYS):
+                raise ProviderUnavailable("gemini: unavailable after retries") from e
             time.sleep(delay)
 
     raise ProviderUnavailable("gemini: unavailable after retries")
