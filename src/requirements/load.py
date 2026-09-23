@@ -2,7 +2,7 @@ import json
 from pathlib import Path
 
 from src.db import connect
-from src.ingest.embed import embed_passages
+from src.ingest.embed import embed_queries
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -15,8 +15,10 @@ def load_catalog(name: str, title: str, version: str = "v1") -> int:
     rows = [
         json.loads(line) for line in path.read_text(encoding="utf-8").splitlines() if line.strip()
     ]
-    # embed the checkable paraphrase (requirement), not the raw legal wording
-    vectors = embed_passages([r["requirement"] for r in rows])
+    # embed the checkable paraphrase (requirement) as a QUERY: at check time we're
+    # asking "which chunks satisfy this requirement", a query->passage retrieval,
+    # not passage->passage -- e5 models are trained on that asymmetry specifically.
+    vectors = embed_queries([r["requirement"] for r in rows])
 
     with connect() as conn:
         cur = conn.cursor()
@@ -29,12 +31,21 @@ def load_catalog(name: str, title: str, version: str = "v1") -> int:
         )
         regulation_id = cur.fetchone()[0]
 
-        cur.execute("DELETE FROM requirements WHERE regulation_id = %s", (regulation_id,))
+        # Upsert by (regulation_id, key) rather than delete-then-insert: findings
+        # reference requirements.id with ON DELETE CASCADE, so a blanket delete
+        # here would silently wipe every finding ever recorded against this
+        # catalog. Reloading (e.g. to refresh embeddings) must preserve ids.
         for row, vec in zip(rows, vectors, strict=True):
             cur.execute(
                 "INSERT INTO requirements (regulation_id, key, ref, legal_text, requirement, "
                 "condition, obligation, category, ref_verified, embedding) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT (regulation_id, key) DO UPDATE SET "
+                "ref=EXCLUDED.ref, legal_text=EXCLUDED.legal_text, "
+                "requirement=EXCLUDED.requirement, "
+                "condition=EXCLUDED.condition, obligation=EXCLUDED.obligation, "
+                "category=EXCLUDED.category, ref_verified=EXCLUDED.ref_verified, "
+                "embedding=EXCLUDED.embedding",
                 (
                     regulation_id,
                     row["key"],
