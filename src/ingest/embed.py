@@ -9,3 +9,7 @@ def embed_passages(texts: list[str]):
 
 def embed_query(text: str):
     return _model.encode(f"query: {text}", normalize_embeddings=True)
+
+
+def embed_queries(texts: list[str]):
+    return _model.encode([f"query: {t}" for t in texts], normalize_embeddings=True, batch_size=32)

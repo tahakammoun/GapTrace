@@ -1,7 +1,13 @@
 import re
 
-MAX_CHARS = 900
-OVERLAP = 150
+# Counterintuitive but measured, not assumed: smaller chunks made retrieval rank
+# WORSE for known-answer test cases (multilingual-e5-base needs enough surrounding
+# context to place a chunk in the right topic; an isolated sentence embeds vaguely).
+# 2500 roughly matches this document's natural FAQ-section size and put 5/6 known
+# answers in the top 4 by cosine rank, vs. 900 putting them at rank 7-15+. Re-check
+# with src/eval/metrics.py before changing this again.
+MAX_CHARS = 2500
+OVERLAP = 300
 
 
 def chunk_text(text: str) -> list[str]:
