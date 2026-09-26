@@ -70,9 +70,15 @@ def _call_gemini(system: str | None, prompt: str) -> str:
             response = client.models.generate_content(model=GEMINI_MODEL, contents=contents)
             return response.text
         except genai_errors.ClientError as e:
-            if e.code == 429:
+            if e.code != 429:
+                raise
+            # 429 covers both per-minute rate limiting (transient, worth
+            # retrying) and daily quota exhaustion (not). We can't tell them
+            # apart from the error alone, so retry like any transient error
+            # and only give up -- letting Groq take over -- once retries run out.
+            if attempt == len(RETRY_DELAYS):
                 raise ProviderUnavailable("gemini: quota exceeded") from e
-            raise
+            time.sleep(delay)
         except genai_errors.ServerError as e:
             if e.code != 503:
                 raise
@@ -100,11 +106,16 @@ def _call_groq(system: str | None, prompt: str) -> str:
             json={"model": GROQ_MODEL, "messages": messages},
             timeout=60,
         )
-        if resp.status_code == 429:
-            raise ProviderUnavailable("groq: quota exceeded")
-        if resp.status_code >= 500 and attempt < len(RETRY_DELAYS):
+        if resp.status_code in (429, 500, 502, 503, 504) and attempt < len(RETRY_DELAYS):
             time.sleep(delay)
             continue
+        if resp.status_code == 429:
+            raise ProviderUnavailable("groq: quota exceeded")
+        if resp.status_code == 413:
+            # Retrying won't shrink the prompt -- this provider simply can't
+            # take a request this size, so there's no fallback for THIS call,
+            # not a reason to crash the whole run.
+            raise ProviderUnavailable("groq: payload too large") from None
         resp.raise_for_status()
         return resp.json()["choices"][0]["message"]["content"]
 

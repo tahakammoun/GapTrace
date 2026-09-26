@@ -35,7 +35,19 @@ def build(requirement: dict, chunks: list[dict]) -> str:
 
 def parse(raw: str) -> dict:
     cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```")
-    return json.loads(cleaned.strip())
+    try:
+        return json.loads(cleaned.strip())
+    except json.JSONDecodeError:
+        # A malformed response (seen in practice: Groq writing '"confidence": 0. nine')
+        # must not crash the whole run or default to "addressed" -- fall back to the
+        # safe status and record what actually came back, for debugging.
+        return {
+            "status": "not_found",
+            "passage": None,
+            "evidence": "",
+            "rationale": f"Unparsable model response: {raw[:300]!r}",
+            "confidence": None,
+        }
 
 
 def verify_evidence(result: dict, chunks: list[dict]) -> tuple[bool, int | None]:

@@ -24,4 +24,10 @@ def build(condition: str, chunks: list[dict]) -> str:
 
 def parse(raw: str) -> dict:
     cleaned = raw.strip().removeprefix("```json").removeprefix("```").removesuffix("```")
-    return json.loads(cleaned.strip())
+    try:
+        return json.loads(cleaned.strip())
+    except json.JSONDecodeError:
+        return {
+            "applicability": "unknown",
+            "rationale": f"Unparsable model response: {raw[:300]!r}",
+        }
