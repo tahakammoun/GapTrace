@@ -191,16 +191,17 @@ One requirement = one Obligation or Condition a reviewer could tick off independ
   alone.
 - Procedural duties (Fristen, Form) are separate from content duties.
 ## Catalog v1 frozen <date>
-- ~60 requirements from DSGVO Art. 12-14
+- 56 requirements from DSGVO Art. 12-14
 - File shape (requirements/dsgvo_art12_14.jsonl): {key, ref, legal_text, requirement,
   condition, obligation, category, ref_verified}
-- Database shape (requirements table): same fields, with `requirement` stored in the
-  `text` column — mapped once, in src/requirements/load.py, and nowhere else
+- Database shape (requirements table): same fields; schema_004 renamed the original
+  `text` column to `legal_text` and added `requirement` — mapped once, in
+  src/requirements/load.py, and nowhere else
 - legal_text verified against EUR-Lex consolidated text; text is the checkable
   paraphrase used for embedding and matching
-- ~8 rows carry an explicit `condition` (consent-based, legitimate-interest-based,
-  repurposing, third-country transfer); findings on these get `applicability` set
-  before status is decided
+- 27 rows carry an explicit `condition`, across 11 condition types (consent-based,
+  legitimate-interest-based, repurposing, third-country transfer, DPO, children,
+  pictograms, ...); findings on these get `applicability` set before status is decided
 - Dropped: Art. 12(2)-(6) and 12(8) (request-handling process, not document content),
   14(3) and 14(5) (timing rules and exemptions, not checkable against document text),
   art12_1_muendliche_information (a permission on the controller, "kann" not "muss",
@@ -212,3 +213,82 @@ One requirement = one Obligation or Condition a reviewer could tick off independ
 - Splitting rule: see above
 - Changing this catalog invalidates every measurement taken against it. If it must
   change, bump version to v2.
+## Target ingest, checking and eval (2026-09-22 → 2026-10-05)
+
+Each change below was made because a measurement showed a problem, and checked by
+re-measuring. Retrieval ranks come from known-answer cases; status numbers come from
+src/eval/metrics.py against eval/gold/.
+
+### Ingest and retrieval
+- parse_html extracts block by block: inline content joined with " ", blocks with
+  "\n\n". One global get_text("\n") split every cross-reference link out of its
+  sentence and produced no blank lines, so chunk_text never found a paragraph break.
+- Requirements are embedded with "query: ", chunks with "passage: ". Both used to be
+  "passage: "; multilingual-e5 is trained on the query/passage pairing.
+- Chunk size 2500 chars, overlap 300 (was 900/150). Counterintuitive but measured:
+  smaller chunks made rank WORSE on every known-answer case; the model needs topical
+  context. Swept 150–5000; at 2500, 5 of 6 known answers rank top-4 (was 7–35).
+- k = 10 chunks for classification, 8 for applicability. k=15 recalled more, but its
+  ~35k-char prompt got a 413 from Groq, which removed the fallback exactly when Gemini
+  ran out of quota.
+- load.py upserts requirements by (regulation_id, key): findings cascade-delete with
+  requirements, so delete-and-reinsert would wipe every finding.
+- checking/run.py skips ingest if the document exists: re-ingesting deletes chunks
+  that findings.evidence_chunk still points at.
+
+### LLM client
+- 429 is retried with backoff before falling back (per-minute limits look the same as
+  daily quota). Gemini 503 after retries and Groq 413 become ProviderUnavailable so
+  the fallback actually runs instead of crashing the whole batch.
+- Unparsable model JSON (seen: '"confidence": 0. nine') falls back to the safe status
+  (not_found / unknown), never addressed.
+- temperature 0, included in the cache key.
+- Every active provider's cache is checked before any live call. Before, a Groq answer
+  cached on a day Gemini was out was re-bought from Gemini the next day — wasting
+  quota and flipping results, since the two models disagree on the same prompt.
+- LLM_PROVIDERS=gemini restricts a run to one model (and only its cache). Use it for
+  eval runs, so a before/after compares prompts, not Gemini against Groq:
+  `LLM_PROVIDERS=gemini uv run python -m src.checking.run <file>`
+
+### Checking
+- art12_1_form_uebermittlung ("provided electronically") gets a fixed `addressed` in
+  run.py: it describes the document itself, which no chunk can quote. One narrow
+  exception, not the check-type dispatcher decided against above.
+- Prompts v1 added a global rule: evidence covering only a side aspect (e.g. one
+  analytics tool) is partial, not addressed. Fixed dorfladen (status 57% → 79% on the
+  same 19 requirements, false-addressed 20% → 0%) but hurt bahn (74% → 60% on the
+  same 44): bahn states facts per activity, which the rule read as side aspects.
+- Prompts v2: that rule applies only to the two `_rechtsgrundlage` requirements, and
+  every applicability condition gets a plain-language description (the model had
+  misread "new purpose", "third-country transfer" and "consent" from the bare
+  condition strings). Not yet measured.
+
+### Eval
+- metrics.py scores applicability and status separately; false-addressed rate is the
+  headline number (CLAUDE.md: a false "addressed" is far worse than a false "not_found").
+- Gold: target1_bahn (thorough notice, no genuine gaps) and target4_dorfladen (thin
+  pre-GDPR notice: BDSG wording, invalidated Privacy Shield, no portability or
+  complaint right, legal basis only for Google Analytics). Every gold quote is checked
+  verbatim against the document.
+- not_found precision on bahn is structurally 0: its gold has no not_found cases, so
+  only dorfladen can measure whether real gaps are caught.
+- Three bahn gold labels were moved partial → addressed after re-reading: the
+  mandatory/voluntary disclosure repeats across account, ticket and payment sections.
+  Gold labels are drafted by Claude and still need a human pass.
+- No pass/fail thresholds yet — CLAUDE.md requires them before anything counts as done.
+
+| run | checked | applicability | status | false-addressed | not_found P/R |
+|---|---|---|---|---|---|
+| bahn, original prompts | 56/56 | 88% | 72% | 17% | 0% / n/a |
+| bahn, prompts v1 | 44/56 | — | 60% | 1 of 5 | — |
+| dorfladen, original prompts | 19/56 | 89% | 57% | 20% | 20% / 50% |
+| dorfladen, prompts v1 | 56/56 | 96% | 73% | 10% | 78% / 58% |
+
+Caveat: all of these runs mixed Gemini and Groq answers, which predates LLM_PROVIDERS.
+
+### Known open issues
+- "Must the data subject provide data" (Art. 13(2)(e)) misread as "why data is
+  processed" on dorfladen — a real overclaim.
+- Overall readability (Art. 12(1)) is a whole-document judgment; quote-and-classify
+  can't make it.
+- 6 dorfladen quotes failed the verbatim check and were downgraded to partial.
