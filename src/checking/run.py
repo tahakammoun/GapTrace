@@ -10,6 +10,21 @@ from src.llm.client import complete
 
 REGULATION = "dsgvo_art12_14"
 
+# A handful of requirements ask about a property of the DOCUMENT ITSELF (how it was
+# delivered), not something a chunk of its content could ever quote as evidence --
+# "provided electronically" is trivially true for anything we could have ingested at
+# all. Retrieval-and-classify can't answer this shape of question, and NOTES.md
+# already decided a general per-requirement check-type dispatcher isn't worth
+# building at this scale -- this is a narrowly-scoped exception for the one clear-cut
+# case we've actually hit, not a step toward that dispatcher.
+STRUCTURAL_OVERRIDES = {
+    "art12_1_form_uebermittlung": (
+        "addressed",
+        "Document was ingested as an electronic file (HTML/PDF); "
+        "structurally satisfies 'in writing or another form, including electronically'.",
+    ),
+}
+
 
 def get_ids(filename: str) -> tuple[int, int, int]:
     with connect() as conn:
@@ -40,6 +55,33 @@ def check_applicability(document_id: int, req: dict) -> tuple[str, str]:
     return result.get("applicability", "unknown"), result.get("rationale", "")
 
 
+def _write_finding(
+    target_id: int, req: dict, result: dict, applicability: str, chunk_id: int | None
+) -> None:
+    with connect() as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO findings (target_id, requirement_id, status, applicability, "
+            "evidence_chunk, evidence_quote, rationale, confidence) "
+            "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT (target_id, requirement_id) DO UPDATE SET "
+            "status=EXCLUDED.status, applicability=EXCLUDED.applicability, "
+            "evidence_chunk=EXCLUDED.evidence_chunk, evidence_quote=EXCLUDED.evidence_quote, "
+            "rationale=EXCLUDED.rationale, confidence=EXCLUDED.confidence",
+            (target_id, req["id"], result["status"], applicability, chunk_id,
+             result.get("evidence"), result.get("rationale"), result.get("confidence")),
+        )
+        conn.commit()
+
+
+def _print_line(req: dict, applicability: str, result: dict) -> None:
+    mark = {"addressed": "OK ", "partial": "~~ ", "not_found": "XX ",
+            "not_applicable": "-- "}[
+        "not_applicable" if applicability == "not_applicable" else result["status"]
+    ]
+    print(f"{mark} {req['ref']:20s} {req['text'][:50]}")
+
+
 def run(filename: str):
     document_id, regulation_id, target_id = get_ids(filename)
 
@@ -59,6 +101,17 @@ def run(filename: str):
     invalid = 0
 
     for req in reqs:
+        if req["key"] in STRUCTURAL_OVERRIDES:
+            status, rationale = STRUCTURAL_OVERRIDES[req["key"]]
+            applicability = "applicable"
+            result = {"status": status, "confidence": 1.0, "evidence": None,
+                      "rationale": rationale}
+            chunk_id = None
+            counts[result["status"]] += 1
+            _write_finding(target_id, req, result, applicability, chunk_id)
+            _print_line(req, applicability, result)
+            continue
+
         applicability, appl_reason = check_applicability(document_id, req)
 
         if applicability == "not_applicable":
@@ -79,26 +132,8 @@ def run(filename: str):
                 chunk_id = None
             counts[result["status"]] += 1
 
-        with connect() as conn:
-            cur = conn.cursor()
-            cur.execute(
-                "INSERT INTO findings (target_id, requirement_id, status, applicability, "
-                "evidence_chunk, evidence_quote, rationale, confidence) "
-                "VALUES (%s,%s,%s,%s,%s,%s,%s,%s) "
-                "ON CONFLICT (target_id, requirement_id) DO UPDATE SET "
-                "status=EXCLUDED.status, applicability=EXCLUDED.applicability, "
-                "evidence_chunk=EXCLUDED.evidence_chunk, evidence_quote=EXCLUDED.evidence_quote, "
-                "rationale=EXCLUDED.rationale, confidence=EXCLUDED.confidence",
-                (target_id, req["id"], result["status"], applicability, chunk_id,
-                 result.get("evidence"), result.get("rationale"), result.get("confidence")),
-            )
-            conn.commit()
-
-        mark = {"addressed": "OK ", "partial": "~~ ", "not_found": "XX ",
-                "not_applicable": "-- "}[
-            "not_applicable" if applicability == "not_applicable" else result["status"]
-        ]
-        print(f"{mark} {req['ref']:20s} {req['text'][:50]}")
+        _write_finding(target_id, req, result, applicability, chunk_id)
+        _print_line(req, applicability, result)
 
     print(f"\n{counts}   invalid evidence: {invalid}")
 
