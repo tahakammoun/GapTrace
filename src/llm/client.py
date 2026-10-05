@@ -132,10 +132,27 @@ _CALLERS = {"gemini": _call_gemini, "groq": _call_groq}
 _MODELS = {"gemini": GEMINI_MODEL, "groq": GROQ_MODEL}
 
 
+def active_providers() -> list[str]:
+    """PROVIDER_ORDER, or the subset named in LLM_PROVIDERS (e.g. "gemini").
+
+    Eval runs set LLM_PROVIDERS=gemini so a run either finishes on one model or
+    stops: with fallback on, findings mix Gemini and Groq answers depending on
+    whose quota lasted, and since the two disagree on the same prompt a
+    before/after comparison can't separate a prompt change from a model switch.
+    Read at call time, not import time, so it can't go stale.
+    """
+    raw = os.getenv("LLM_PROVIDERS", "")
+    chosen = [p.strip() for p in raw.split(",") if p.strip()] or PROVIDER_ORDER
+    unknown = [p for p in chosen if p not in _CALLERS]
+    if unknown:
+        raise ValueError(f"LLM_PROVIDERS names unknown provider(s): {unknown}")
+    return chosen
+
+
 def complete(
     prompt: str, *, system: str | None = None, use_cache: bool = True, temperature: float = 0.0
 ) -> str:
-    """Get a completion for `prompt`, trying providers in PROVIDER_ORDER.
+    """Get a completion for `prompt`, trying active_providers() in order.
 
     Cached on disk per (provider, model, system, prompt, temperature). Every
     provider's cache is checked before ANY live call: otherwise an answer Groq
@@ -152,15 +169,18 @@ def complete(
     catalog entries -- could get different applicability verdicts purely
     from sampling noise, not from anything in the evidence.
     """
+    providers = active_providers()
     if use_cache:
-        for provider in PROVIDER_ORDER:
+        # Only the active providers' caches: a single-model run must not be
+        # served answers another model gave.
+        for provider in providers:
             key = _cache_key(provider, _MODELS[provider], system, prompt, temperature)
             cached = _cache_get(key)
             if cached is not None:
                 return cached
 
     failures = []
-    for provider in PROVIDER_ORDER:
+    for provider in providers:
         model = _MODELS[provider]
         key = _cache_key(provider, model, system, prompt, temperature)
         try:

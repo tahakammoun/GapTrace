@@ -6,7 +6,7 @@ from src.checking.classify import build, parse, verify_evidence
 from src.checking.retrieve import top_chunks
 from src.db import connect
 from src.ingest.pipeline import ingest
-from src.llm.client import complete
+from src.llm.client import active_providers, complete
 
 REGULATION = "dsgvo_art12_14"
 
@@ -83,6 +83,7 @@ def _print_line(req: dict, applicability: str, result: dict) -> None:
 
 
 def run(filename: str):
+    print(f"providers: {', '.join(active_providers())}", flush=True)
     document_id, regulation_id, target_id = get_ids(filename)
 
     with connect() as conn:
