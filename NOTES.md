@@ -261,7 +261,7 @@ src/eval/metrics.py against eval/gold/.
 - Prompts v2: that rule applies only to the two `_rechtsgrundlage` requirements, and
   every applicability condition gets a plain-language description (the model had
   misread "new purpose", "third-country transfer" and "consent" from the bare
-  condition strings). Not yet measured.
+  condition strings). Measured below.
 
 ### Eval
 - metrics.py scores applicability and status separately; false-addressed rate is the
@@ -283,8 +283,22 @@ src/eval/metrics.py against eval/gold/.
 | bahn, prompts v1 | 44/56 | — | 60% | 1 of 5 | — |
 | dorfladen, original prompts | 19/56 | 89% | 57% | 20% | 20% / 50% |
 | dorfladen, prompts v1 | 56/56 | 96% | 73% | 10% | 78% / 58% |
+| dorfladen, prompts v2 | 56/56 | 100% | 61% | 29% | 70% / 58% |
 
 Caveat: all of these runs mixed Gemini and Groq answers, which predates LLM_PROVIDERS.
+
+Provider mix, reconstructed from the cache: classification was mostly Groq in every
+run (dorfladen v1 37/44, v2 39/42; bahn original 21/36, v1 25/32), so the classify
+trade-off below is not a model artefact. Gemini's free quota runs out first — Groq,
+not Gemini, is the model with enough quota to pin for eval runs.
+
+Prompts v2 result: condition descriptions are a clear win (dorfladen applicability
+96% → 100%, kept). The legal-basis-only rule is not: dorfladen false-addressed went
+10% → 29%, back to over-crediting facts stated for one narrow case (objection right
+only for Google Maps, invalidated Privacy Shield as safeguard). v1's global rule
+caught those but broke bahn. Open: a rule that separates "stated per activity across
+the document" (bahn, fine) from "stated for one tool while the main processing is
+silent" (dorfladen, a gap).
 
 ### Known open issues
 - "Must the data subject provide data" (Art. 13(2)(e)) misread as "why data is
