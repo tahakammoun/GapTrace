@@ -38,8 +38,10 @@ class AllProvidersExhausted(Exception):
     """Every configured provider failed for this call."""
 
 
-def _cache_key(provider: str, model: str, system: str | None, prompt: str) -> str:
-    raw = f"{provider}|{model}|{system or ''}|{prompt}"
+def _cache_key(
+    provider: str, model: str, system: str | None, prompt: str, temperature: float
+) -> str:
+    raw = f"{provider}|{model}|{system or ''}|{prompt}|{temperature}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
@@ -57,7 +59,7 @@ def _cache_set(key: str, text: str, provider: str, model: str) -> None:
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
 
-def _call_gemini(system: str | None, prompt: str) -> str:
+def _call_gemini(system: str | None, prompt: str, temperature: float) -> str:
     api_key = os.environ.get("GOOGLE_API_KEY")
     if not api_key:
         raise ProviderUnavailable("gemini: GOOGLE_API_KEY not set")
@@ -67,7 +69,11 @@ def _call_gemini(system: str | None, prompt: str) -> str:
 
     for attempt, delay in enumerate(RETRY_DELAYS, start=1):
         try:
-            response = client.models.generate_content(model=GEMINI_MODEL, contents=contents)
+            response = client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=contents,
+                config={"temperature": temperature},
+            )
             return response.text
         except genai_errors.ClientError as e:
             if e.code != 429:
@@ -89,7 +95,7 @@ def _call_gemini(system: str | None, prompt: str) -> str:
     raise ProviderUnavailable("gemini: unavailable after retries")
 
 
-def _call_groq(system: str | None, prompt: str) -> str:
+def _call_groq(system: str | None, prompt: str, temperature: float) -> str:
     api_key = os.environ.get("GROQ_API_KEY")
     if not api_key:
         raise ProviderUnavailable("groq: GROQ_API_KEY not set")
@@ -103,7 +109,7 @@ def _call_groq(system: str | None, prompt: str) -> str:
         resp = httpx.post(
             GROQ_URL,
             headers={"Authorization": f"Bearer {api_key}"},
-            json={"model": GROQ_MODEL, "messages": messages},
+            json={"model": GROQ_MODEL, "messages": messages, "temperature": temperature},
             timeout=60,
         )
         if resp.status_code in (429, 500, 502, 503, 504) and attempt < len(RETRY_DELAYS):
@@ -126,27 +132,39 @@ _CALLERS = {"gemini": _call_gemini, "groq": _call_groq}
 _MODELS = {"gemini": GEMINI_MODEL, "groq": GROQ_MODEL}
 
 
-def complete(prompt: str, *, system: str | None = None, use_cache: bool = True) -> str:
+def complete(
+    prompt: str, *, system: str | None = None, use_cache: bool = True, temperature: float = 0.0
+) -> str:
     """Get a completion for `prompt`, trying providers in PROVIDER_ORDER.
 
-    Cached on disk per (provider, model, system, prompt) — a cache hit on
-    the first provider short-circuits before any network call, so a
-    quota-exhausted primary provider never blocks re-reading work already
-    paid for. Falls through to the next provider only on ProviderUnavailable
-    (missing key or quota); any other error propagates immediately.
-    """
-    failures = []
-    for provider in PROVIDER_ORDER:
-        model = _MODELS[provider]
-        key = _cache_key(provider, model, system, prompt)
+    Cached on disk per (provider, model, system, prompt, temperature). Every
+    provider's cache is checked before ANY live call: otherwise an answer Groq
+    gave on a day Gemini was out of quota gets silently re-bought from Gemini
+    the next day -- wasting quota and, since the two models disagree often
+    enough, flipping the result depending on which provider had quota. Falls
+    through to the next provider only on ProviderUnavailable (missing key or
+    quota); any other error propagates immediately.
 
-        if use_cache:
+    temperature defaults to 0.0, not the provider default: every current
+    caller is a classification task (status, applicability) where the same
+    question should get the same answer. Without this, two near-identical
+    prompts -- e.g. the same condition checked for its Art.13 and Art.14
+    catalog entries -- could get different applicability verdicts purely
+    from sampling noise, not from anything in the evidence.
+    """
+    if use_cache:
+        for provider in PROVIDER_ORDER:
+            key = _cache_key(provider, _MODELS[provider], system, prompt, temperature)
             cached = _cache_get(key)
             if cached is not None:
                 return cached
 
+    failures = []
+    for provider in PROVIDER_ORDER:
+        model = _MODELS[provider]
+        key = _cache_key(provider, model, system, prompt, temperature)
         try:
-            text = _CALLERS[provider](system, prompt)
+            text = _CALLERS[provider](system, prompt, temperature)
         except ProviderUnavailable as e:
             failures.append(str(e))
             continue
